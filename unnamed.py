@@ -1,5 +1,6 @@
 import tdl
 import colours
+import math
 from random import randint
 
 SCREEN_WIDTH= 80
@@ -47,15 +48,40 @@ class Tile:
 
 class Fighter:
 
-	def __init__(self, hp, defense, power):
+	def __init__(self, hp, defense, power, death_function=None):
 		self.max_hp = hp
 		self.hp = hp
 		self.defense = defense
 		self.power = power
+		self.death_function = death_function
+
+	def take_damage(self, damage):
+		if damage > 0:
+			self.hp -= damage
+
+		if self.hp <= 0:
+			function = self.death_function
+			if function is not None:
+				function(self.owner)
+
+	def attack(self, target):
+		damage = self.power - target.fighter.defense
+
+		if damage > 0:
+			print(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' damage.')
+			target.fighter.take_damage(damage)
+		else:
+			print(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
 
 class BasicMonster:
 	def take_turn(self):
-		print('The ' + self.owner.name + ' growls!')
+		monster = self.owner
+
+		if(monster.x, monster.y) in visible_tiles:
+			if monster.distance_to(player) >= 2:
+				monster.move_towards(player.x, player.y)
+			elif player.fighter.hp > 0:
+				monster.fighter.attack(player)
 
 
 class GameObject:
@@ -69,6 +95,9 @@ class GameObject:
 		self.colour = colour
 
 		self.fighter = fighter
+		if self.fighter:
+			self.fighter.owner = self
+
 		self.ai = ai
 		if self.ai:
 			self.ai.owner = self
@@ -77,6 +106,26 @@ class GameObject:
 		if not is_blocked(self.x + dx, self.y + dy):
 			self.x += dx
 			self.y += dy
+
+	def move_towards(self, target_x, target_y):
+		dx = target_x - self.x
+		dy = target_y - self.y
+		distance = math.sqrt(dx ** 2 + dy ** 2)
+
+		dx = int(round(dx / distance))
+		dy = int(round(dy / distance))
+		self.move(dx, dy)
+
+	def distance_to(self, other):
+		#return the distance to another object
+		dx = other.x - self.x
+		dy = other.y - self.y
+		return math.sqrt(dx ** 2 + dy ** 2)
+
+	def send_to_back(self):
+		global objects
+		objects.remove(self)
+		objects.insert(0, self)
 
 	def draw(self):
 		if (self.x, self.y) in visible_tiles:
@@ -98,18 +147,18 @@ def create_v_tunnel(y1, y2, x):
 		my_map[x][y].block_sight = False
 
 def is_visible_tile(x, y):
-    global my_map
+	global my_map
  
-    if x >= MAP_WIDTH or x < 0:
-        return False
-    elif y >= MAP_HEIGHT or y < 0:
-        return False
-    elif my_map[x][y].blocked == True:
-        return False
-    elif my_map[x][y].block_sight == True:
-        return False
-    else:
-        return True
+	if x >= MAP_WIDTH or x < 0:
+		return False
+	elif y >= MAP_HEIGHT or y < 0:
+		return False
+	elif my_map[x][y].blocked == True:
+		return False
+	elif my_map[x][y].block_sight == True:
+		return False
+	else:
+		return True
 
 def is_blocked(x, y):
 	if my_map[x][y].blocked:
@@ -137,9 +186,14 @@ def place_objects(room):
 
 		if not is_blocked(x, y):
 			if randint(0, 100) < 80:
-				monster = GameObject(x, y, 'o', 'Orc', colours.desaturated_green, blocks=True)
+
+				fighter_c = Fighter(hp=10,defense=0,power=3, death_function=monster_death)
+				ai_c = BasicMonster()
+				monster = GameObject(x, y, 'o', 'Orc', colours.desaturated_green, blocks=True, fighter=fighter_c, ai=ai_c)
 			else:
-				monster = GameObject(x, y, 'T', 'Troll', colours.darker_green, blocks=True)
+				fighter_c = Fighter(hp=12,defense=1,power=3, death_function=monster_death)
+				ai_c = BasicMonster()
+				monster = GameObject(x, y, 'T', 'Troll', colours.darker_green, blocks=True, fighter=fighter_c, ai=ai_c)
 
 			objects.append(monster)
 
@@ -201,15 +255,33 @@ def player_move_or_attack(dx, dy):
 
 	target = None
 	for obj in objects:
-		if obj.x == x and obj.y == y:
+		if obj.fighter and obj.x == x and obj.y == y:
 			target = obj
 			break
 
 	if target is not None:
-		print('The ' + target.name + ' laughs at your puny efforts at attack him!')
+		player.fighter.attack(target)
 	else:
 		player.move(dx, dy)
 		fov_recompute = True
+
+def player_death(player):
+	global game_state
+	print('You Died!')
+	game_state = 'dead'
+
+	player.char = '%'
+	player.colour = colours.dark_red
+
+def monster_death(monster):
+	print(monster.name.capitalize() + ' is dead!')
+	monster.char = '%'
+	monster.colour = colours.dark_red
+	monster.blocks = False
+	monster.fighter = None
+	monster.ai = None
+	monster.name = monster.name + ' corpse'
+	monster.send_to_back()
 
 def render_all():
 	global fov_recompute
@@ -231,17 +303,21 @@ def render_all():
 						if wall:
 							con.draw_char(x,y,None,fg=None,bg=colour_dark_wall)
 						else:
-							con.draw_char(x,y,'.',fg=None,bg=colour_dark_ground)
+							con.draw_char(x,y,None,fg=None,bg=colour_dark_ground)
 				else:
 					if wall:
 						con.draw_char(x, y, None, fg=None, bg=colour_light_wall)
 					else:
-						con.draw_char(x, y, ' ', fg=None, bg=colour_light_ground)
+						con.draw_char(x, y, None, fg=None, bg=colour_light_ground)
 					my_map[x][y].explored = True
 
 
 	for obj in objects:
-		obj.draw()
+		if obj != player:
+			obj.draw()
+	player.draw()
+
+	con.draw_str(1, SCREEN_HEIGHT - 2, 'HP: ' + str(player.fighter.hp) + '/' + str(player.fighter.max_hp) + ' ')
 
 	root.blit(con, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0)
 
@@ -258,7 +334,7 @@ def handle_keys():
 			key = event
 			keypress = True
 	if not keypress:
-		return
+		return 'no-turn'
 
 	if key.key == '?':
 		return 'Help'
@@ -288,6 +364,8 @@ def handle_keys():
 			player_move_or_attack(-1, 1)
 		elif key.text == 'n' or key.key == 'KP3':
 			player_move_or_attack(1, 1)
+		elif key.key == 'SPACE' or key.key == 'KP5':
+			player_move_or_attack(0, 0)
 		else:
 			return 'no-turn'
 
@@ -304,7 +382,8 @@ con = tdl.Console(SCREEN_WIDTH, SCREEN_HEIGHT)
 game_state = 'playing'
 player_action = None
 
-player = GameObject(0, 0, 1, 'player', (255,255,255), blocks=True)
+fighter_component = Fighter(hp=30, defense=2, power=5, death_function=player_death)
+player = GameObject(0, 0, 1, 'player', colours.white, blocks=True, fighter=fighter_component)
 objects = [player]
 
 make_map()
@@ -326,8 +405,8 @@ while not tdl.event.is_window_closed():
 
 	if game_state == 'playing' and player_action != 'no-turn':
 		for obj in objects:
-			if obj != player:
-				print('The ' + obj.name + ' growls!')
+			if obj.ai:
+				obj.ai.take_turn()
 
 	if player_action == 'exit':
 		break
