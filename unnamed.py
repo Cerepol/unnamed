@@ -1,12 +1,13 @@
 import tdl
 import colours
 import math
+import textwrap
 from random import randint
 
 SCREEN_WIDTH= 80
 SCREEN_HEIGHT = 50
 MAP_WIDTH = 80
-MAP_HEIGHT = 45
+MAP_HEIGHT = 43
 LIMIT_FPS = 60
 ROOM_MAX_SIZE = 10
 ROOM_MIN_SIZE = 6
@@ -15,6 +16,14 @@ MAX_ROOM_MONSTERS = 3
 FOV_ALGO = 'BASIC'
 FOV_LIGHT_WALLS = True
 TORCH_RADIUS = 6
+ 
+#UI
+BAR_WIDTH = 20
+PANEL_HEIGHT = 7
+PANEL_Y = SCREEN_HEIGHT - PANEL_HEIGHT
+MSG_X = BAR_WIDTH + 2
+MSG_WIDTH = SCREEN_WIDTH - BAR_WIDTH - 2
+MSG_HEIGHT = PANEL_HEIGHT - 1
 
 colour_light_wall = (150, 150, 100)
 colour_dark_wall = (0, 0, 100)
@@ -68,10 +77,10 @@ class Fighter:
 		damage = self.power - target.fighter.defense
 
 		if damage > 0:
-			print(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' damage.')
+			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' damage.', colours.red)
 			target.fighter.take_damage(damage)
 		else:
-			print(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
+			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!', colours.light_red)
 
 class BasicMonster:
 	def take_turn(self):
@@ -267,14 +276,14 @@ def player_move_or_attack(dx, dy):
 
 def player_death(player):
 	global game_state
-	print('You Died!')
+	message('You Died!', colours.darkest_red)
 	game_state = 'dead'
 
 	player.char = '%'
 	player.colour = colours.dark_red
 
 def monster_death(monster):
-	print(monster.name.capitalize() + ' is dead!')
+	message(monster.name.capitalize() + ' is dead!', colours.blue)
 	monster.char = '%'
 	monster.colour = colours.dark_red
 	monster.blocks = False
@@ -282,6 +291,35 @@ def monster_death(monster):
 	monster.ai = None
 	monster.name = monster.name + ' corpse'
 	monster.send_to_back()
+
+def message(new_msg, colour = colours.white):
+	new_msg_lines = textwrap.wrap(new_msg, MSG_WIDTH)
+
+	for line in new_msg_lines:
+		if len(game_msgs) == MSG_HEIGHT:
+			del game_msgs[0]
+
+		game_msgs.append((line, colour))
+
+	y = 1
+	for (line, colour) in game_msgs:
+		panel.draw_str(MSG_X, y, line, bg=None, fg=colour)
+		y += 1
+
+def render_bar(x, y, total_width, name, value, maximum, bar_colour, back_colour):
+	bar_width = int(float(value) / maximum * total_width)
+
+	panel.draw_rect(x, y, total_width, 1, None, bg=back_colour)
+
+	if bar_width > 0:
+		panel.draw_rect(x, y, bar_width, 1, None, bg=bar_colour)
+
+	text = name + ': ' + str(value) + '/' + str(maximum)
+	x_centered = x + (total_width - len(text)) // 2
+	panel.draw_str(x_centered, y, text, fg=colours.white, bg=None)
+
+
+
 
 def render_all():
 	global fov_recompute
@@ -317,9 +355,12 @@ def render_all():
 			obj.draw()
 	player.draw()
 
-	con.draw_str(1, SCREEN_HEIGHT - 2, 'HP: ' + str(player.fighter.hp) + '/' + str(player.fighter.max_hp) + ' ')
+	
 
-	root.blit(con, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0)
+	render_bar(1, 1, BAR_WIDTH, 'HP', player.fighter.hp, player.fighter.max_hp, colours.dark_red, colours.darker_red)
+
+	root.blit(panel, 0, PANEL_Y, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0)
+	root.blit(con, 0, 0, MAP_WIDTH, MAP_HEIGHT, 0, 0)
 
 #Key Handler
 def handle_keys():
@@ -377,7 +418,7 @@ root = tdl.init(SCREEN_WIDTH, SCREEN_HEIGHT, title='Unnamed Roguelike', fullscre
 tdl.setFPS(LIMIT_FPS)
 
 #main blit console
-con = tdl.Console(SCREEN_WIDTH, SCREEN_HEIGHT)
+con = tdl.Console(MAP_WIDTH, MAP_HEIGHT)
 
 game_state = 'playing'
 player_action = None
@@ -385,6 +426,14 @@ player_action = None
 fighter_component = Fighter(hp=30, defense=2, power=5, death_function=player_death)
 player = GameObject(0, 0, 1, 'player', colours.white, blocks=True, fighter=fighter_component)
 objects = [player]
+
+panel = tdl.Console(SCREEN_WIDTH, PANEL_HEIGHT)
+panel.clear(fg=colours.white, bg=colours.black)
+
+game_msgs = []
+
+message('Welcome stranger! Prepare to perish in the Tombs of the Ancient Kings.', colours.red)
+
 
 make_map()
 fov_recompute = True
