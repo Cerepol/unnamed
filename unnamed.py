@@ -265,7 +265,8 @@ def player_move_or_attack(dx, dy):
 	target = None
 	for obj in objects:
 		if obj.fighter and obj.x == x and obj.y == y:
-			target = obj
+			if obj != player:
+				target = obj
 			break
 
 	if target is not None:
@@ -281,6 +282,17 @@ def player_death(player):
 
 	player.char = '%'
 	player.colour = colours.dark_red
+
+def get_names_under_mouse():
+	global visible_tiles
+
+	(x, y) = mouse_coord
+
+	names = [obj.name for obj in objects
+		if obj.x == x and obj.y == y and (obj.x, obj.y) in visible_tiles]
+
+	names = ', '.join(names)
+	return names.capitalize() 
 
 def monster_death(monster):
 	message(monster.name.capitalize() + ' is dead!', colours.blue)
@@ -359,6 +371,8 @@ def render_all():
 
 	render_bar(1, 1, BAR_WIDTH, 'HP', player.fighter.hp, player.fighter.max_hp, colours.dark_red, colours.darker_red)
 
+	panel.draw_str(1, 0, get_names_under_mouse(), bg=None, fg=colours.light_gray)
+
 	root.blit(panel, 0, PANEL_Y, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0)
 	root.blit(con, 0, 0, MAP_WIDTH, MAP_HEIGHT, 0, 0)
 
@@ -366,19 +380,22 @@ def render_all():
 def handle_keys():
 	global fov_recompute
 	global game_state
-	#old
-	#key = tdl.event.key_wait()
-	#RealTime
+	global mouse_coord
+
+
 	keypress = False
 	for event in tdl.event.get():
 		if event.type == 'KEYDOWN':
 			key = event
 			keypress = True
+		if event.type == 'MOUSEMOTION':
+			mouse_coord = event.cell
 	if not keypress:
 		return 'no-turn'
 
 	if key.key == '?':
-		return 'Help'
+		game_state = 'help'
+		return 'help'
 
 	if key.key == 'ESCAPE':
 		return 'exit'
@@ -434,6 +451,8 @@ game_msgs = []
 
 message('Welcome stranger! Prepare to perish in the Tombs of the Ancient Kings.', colours.red)
 
+
+mouse_coord = (0,0)
 
 make_map()
 fov_recompute = True
