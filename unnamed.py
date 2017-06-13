@@ -16,6 +16,8 @@ MAX_ROOM_MONSTERS = 3
 FOV_ALGO = 'BASIC'
 FOV_LIGHT_WALLS = True
 TORCH_RADIUS = 6
+
+MAX_ROOM_ITEMS = 2
  
 #UI
 BAR_WIDTH = 20
@@ -92,10 +94,20 @@ class BasicMonster:
 			elif player.fighter.hp > 0:
 				monster.fighter.attack(player)
 
+class Item:
+
+	def pick_up(self):
+		if len(inventory) >= 26:
+			message('Your inventory is full, cannot pick up ' + self.owner.name + '.', colours.red)
+		else:
+			inventory.append(self.owner)
+			objects.remove(self.owner)
+			message('You picked up a ' + self.owner.name + '!', colours.green)
+
 
 class GameObject:
 
-	def __init__(self, x, y, char, name, colour, blocks=False, fighter=None, ai=None):
+	def __init__(self, x, y, char, name, colour, blocks=False, fighter=None, ai=None, item=None):
 		self.name = name
 		self.blocks = blocks
 		self.x = x
@@ -107,6 +119,10 @@ class GameObject:
 		if self.fighter:
 			self.fighter.owner = self
 
+		self.item = item
+		if self.item:
+			self.item.owner = self
+			
 		self.ai = ai
 		if self.ai:
 			self.ai.owner = self
@@ -190,8 +206,8 @@ def place_objects(room):
 	num_monsters = randint(0, MAX_ROOM_MONSTERS)
 
 	for i in range(num_monsters):
-		x = randint(room.x1, room.x2)
-		y = randint(room.y1, room.y2)
+		x = randint(room.x1 + 1, room.x2 - 1)
+		y = randint(room.y1 + 1, room.y2 - 1)
 
 		if not is_blocked(x, y):
 			if randint(0, 100) < 80:
@@ -205,6 +221,21 @@ def place_objects(room):
 				monster = GameObject(x, y, 'T', 'Troll', colours.darker_green, blocks=True, fighter=fighter_c, ai=ai_c)
 
 			objects.append(monster)
+
+	num_items = randint(0, MAX_ROOM_ITEMS)
+
+	for i in range(num_items):
+		x = randint(room.x1 + 1, room.x2 - 1)
+		y = randint(room.y1 + 1, room.y2 - 1)
+
+		if not is_blocked(x, y):
+			item_component = Item()
+			item = GameObject(x, y, '!', 'healing potion', colours.violet, item=item_component)
+
+
+			objects.append(item)
+
+			item.send_to_back()
 
 def make_map():
 	global my_map
@@ -425,6 +456,12 @@ def handle_keys():
 		elif key.key == 'SPACE' or key.key == 'KP5':
 			player_move_or_attack(0, 0)
 		else:
+			if key.text == 'g':
+				#pick up item
+				for obj in objects:
+					if obj.x == player.x and obj.y == player.y and obj.item:
+						obj.item.pick_up()
+						break
 			return 'no-turn'
 
 #===========================================================#
@@ -447,6 +484,8 @@ objects = [player]
 panel = tdl.Console(SCREEN_WIDTH, PANEL_HEIGHT)
 panel.clear(fg=colours.white, bg=colours.black)
 
+
+inventory = []
 game_msgs = []
 
 message('Welcome stranger! Prepare to perish in the Tombs of the Ancient Kings.', colours.red)
