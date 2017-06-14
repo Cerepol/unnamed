@@ -4,21 +4,25 @@ import math
 import textwrap
 from random import randint
 
+#Screen Constants
 SCREEN_WIDTH= 80
 SCREEN_HEIGHT = 50
+LIMIT_FPS = 60
+
+#Map Constants
 MAP_WIDTH = 80
 MAP_HEIGHT = 43
-LIMIT_FPS = 60
 ROOM_MAX_SIZE = 10
 ROOM_MIN_SIZE = 6
 MAX_ROOMS = 30
 MAX_ROOM_MONSTERS = 3
+MAX_ROOM_ITEMS = 2
+
+#Player Constants
 FOV_ALGO = 'BASIC'
 FOV_LIGHT_WALLS = True
 TORCH_RADIUS = 6
 
-MAX_ROOM_ITEMS = 2
- 
 #UI
 BAR_WIDTH = 20
 PANEL_HEIGHT = 7
@@ -26,6 +30,7 @@ PANEL_Y = SCREEN_HEIGHT - PANEL_HEIGHT
 MSG_X = BAR_WIDTH + 2
 MSG_WIDTH = SCREEN_WIDTH - BAR_WIDTH - 2
 MSG_HEIGHT = PANEL_HEIGHT - 1
+INVENTORY_WIDTH = 50
 
 colour_light_wall = (150, 150, 100)
 colour_dark_wall = (0, 0, 100)
@@ -52,8 +57,11 @@ class Rect:
 class Tile:
 	def __init__(self, blocked, block_sight = None):
 		self.blocked = blocked
+
+		#No tile starts explored
 		self.explored = False
 
+		#Any blocking tile should also block sight
 		if block_sight is None: block_sight = blocked
 		self.block_sight = block_sight
 
@@ -79,10 +87,16 @@ class Fighter:
 		damage = self.power - target.fighter.defense
 
 		if damage > 0:
-			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' damage.', colours.red)
+			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' damage.')
 			target.fighter.take_damage(damage)
 		else:
-			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!', colours.light_red)
+			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
+
+	def heal(self, amount):
+		self.hp += amount
+
+		if self.hp > self.max_hp:
+			self.hp = self.max_hp
 
 class BasicMonster:
 	def take_turn(self):
@@ -96,8 +110,19 @@ class BasicMonster:
 
 class Item:
 
+	def __init__(self, use_function=None):
+		self.use_function = use_function
+
+	def use(self):
+		if self.use_function is None:
+			message('The ' + self.owner.name + ' cannot be used.')
+		else:
+			result = self.use_function()
+			if result != ('cancelled' or 'permanent'):
+				inventory.remove(self.owner) #destory one use items
+
 	def pick_up(self):
-		if len(inventory) >= 26:
+		if len(inventory) >= 52:
 			message('Your inventory is full, cannot pick up ' + self.owner.name + '.', colours.red)
 		else:
 			inventory.append(self.owner)
@@ -122,7 +147,7 @@ class GameObject:
 		self.item = item
 		if self.item:
 			self.item.owner = self
-			
+
 		self.ai = ai
 		if self.ai:
 			self.ai.owner = self
@@ -153,6 +178,8 @@ class GameObject:
 		objects.insert(0, self)
 
 	def draw(self):
+		global visible_tiles
+
 		if (self.x, self.y) in visible_tiles:
 			con.draw_char(self.x, self.y, self.char, self.colour, bg=None)
 
@@ -229,7 +256,7 @@ def place_objects(room):
 		y = randint(room.y1 + 1, room.y2 - 1)
 
 		if not is_blocked(x, y):
-			item_component = Item()
+			item_component = Item(use_function=cast_heal)
 			item = GameObject(x, y, '!', 'healing potion', colours.violet, item=item_component)
 
 
@@ -284,6 +311,14 @@ def make_map():
 			rooms.append(new_room)
 			num_rooms += 1
 
+def cast_heal():
+		#heal the player
+		if player.fighter.hp == player.fighter.max_hp:
+			message('You are already at full health.', colours.red)
+			return 'cancelled'
+		message('Your wounds start to feel better!', colours.light_violet)
+		player.fighter.heal(player.fighter.max_hp * 0.25)
+
 def player_move_or_attack(dx, dy):
 	global fov_recompute
 	global game_state
@@ -308,7 +343,7 @@ def player_move_or_attack(dx, dy):
 
 def player_death(player):
 	global game_state
-	message('You Died!', colours.darkest_red)
+	message('You Died!', colours.red)
 	game_state = 'dead'
 
 	player.char = '%'
@@ -316,17 +351,19 @@ def player_death(player):
 
 def get_names_under_mouse():
 	global visible_tiles
+	global mouse_coord
 
 	(x, y) = mouse_coord
 
 	names = [obj.name for obj in objects
 		if obj.x == x and obj.y == y and (obj.x, obj.y) in visible_tiles]
 
+
 	names = ', '.join(names)
 	return names.capitalize() 
 
 def monster_death(monster):
-	message(monster.name.capitalize() + ' is dead!', colours.blue)
+	message(monster.name.capitalize() + ' is dead!', colours.orange)
 	monster.char = '%'
 	monster.colour = colours.dark_red
 	monster.blocks = False
@@ -334,6 +371,63 @@ def monster_death(monster):
 	monster.ai = None
 	monster.name = monster.name + ' corpse'
 	monster.send_to_back()
+
+def menu(header, options, width):
+	if len(options) > 52: raise ValueError('Cannot have a menu with more than 52 options')
+
+	header_wrapped = textwrap.wrap(header, width)
+	header_height = len(header_wrapped)
+	height = len(options) + header_height
+
+	window = tdl.Console(width, height)
+
+	window.draw_rect(0, 0, width, height, None, fg=colours.white, bg=None)
+
+	for i, line in enumerate(header_wrapped):
+		window.draw_str(0, 0 + i, header_wrapped[i])
+
+		y = header_height
+		letter_index = ord('a')
+		for option_text in options:
+			text = '(' + chr(letter_index) + ')' + option_text
+			window.draw_str(0, y, text, bg=None)
+			y += 1
+			letter_index += 1
+			if letter_index == ord('z'):
+				letter_index = ord('A')
+
+		x = SCREEN_WIDTH//2 - width//2
+		y = SCREEN_HEIGHT//2 - height//2
+		root.blit(window, x, y, width, height, 0, 0)
+
+		tdl.flush()
+		key = tdl.event.key_wait()
+		key_char = key.char
+		if key_char == '':
+			key_char = ' '
+
+		index = ord(key_char) - ord('a')
+		if index > 26:
+			index = ord(key_char) - ord('A')
+
+		if index >= 0 and index < len(options):
+			return index
+
+		return None
+
+
+def inventory_menu(header):
+	if len(inventory) == 0:
+		options = ['Inventory is empty.']
+	else:
+		options = [item.name for item in inventory]
+
+	index = menu(header, options, INVENTORY_WIDTH)
+
+	if index is None or len(inventory) == 0: return None
+	return inventory[index].item
+
+
 
 def message(new_msg, colour = colours.white):
 	new_msg_lines = textwrap.wrap(new_msg, MSG_WIDTH)
@@ -344,10 +438,6 @@ def message(new_msg, colour = colours.white):
 
 		game_msgs.append((line, colour))
 
-	y = 1
-	for (line, colour) in game_msgs:
-		panel.draw_str(MSG_X, y, line, bg=None, fg=colour)
-		y += 1
 
 def render_bar(x, y, total_width, name, value, maximum, bar_colour, back_colour):
 	bar_width = int(float(value) / maximum * total_width)
@@ -370,7 +460,8 @@ def render_all():
 
 	if fov_recompute:
 		fov_recompute = False
-		visible_tiles = tdl.map.quickFOV(player.x, player.y, is_visible_tile, 
+		visible_tiles = tdl.map.quickFOV(player.x, player.y, 
+										is_visible_tile, 
 										fov = FOV_ALGO,
 										radius = TORCH_RADIUS,
 										lightWalls = FOV_LIGHT_WALLS)
@@ -390,6 +481,8 @@ def render_all():
 						con.draw_char(x, y, None, fg=None, bg=colour_light_wall)
 					else:
 						con.draw_char(x, y, None, fg=None, bg=colour_light_ground)
+
+					#add visible tile as explored
 					my_map[x][y].explored = True
 
 
@@ -398,14 +491,27 @@ def render_all():
 			obj.draw()
 	player.draw()
 
-	
+	#blit all we've drawn so far onto the root console
+	root.blit(con, 0, 0, MAP_WIDTH, MAP_HEIGHT, 0, 0)
 
+	#GUI Panel cleared for redraw
+	panel.clear(fg=colours.white, bg=colours.black)
+
+	#Print out all game messages
+	y = 1
+	for (line, colour) in game_msgs:
+		panel.draw_str(MSG_X, y, line, bg=None, fg=colour)
+		y += 1
+
+	#Statbar
 	render_bar(1, 1, BAR_WIDTH, 'HP', player.fighter.hp, player.fighter.max_hp, colours.dark_red, colours.darker_red)
 
+	#Contents under mouse
 	panel.draw_str(1, 0, get_names_under_mouse(), bg=None, fg=colours.light_gray)
 
+	#Blit the GUI Panel to the console
 	root.blit(panel, 0, PANEL_Y, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0)
-	root.blit(con, 0, 0, MAP_WIDTH, MAP_HEIGHT, 0, 0)
+	
 
 #Key Handler
 def handle_keys():
@@ -462,6 +568,10 @@ def handle_keys():
 					if obj.x == player.x and obj.y == player.y and obj.item:
 						obj.item.pick_up()
 						break
+			elif key.text == 'i':
+				chosen_item = inventory_menu('Press the key next to an item to use it, or any other to cancel.\n')
+				if chosen_item is not None:
+					chosen_item.use()
 			return 'no-turn'
 
 #===========================================================#
@@ -478,7 +588,7 @@ game_state = 'playing'
 player_action = None
 
 fighter_component = Fighter(hp=30, defense=2, power=5, death_function=player_death)
-player = GameObject(0, 0, 1, 'player', colours.white, blocks=True, fighter=fighter_component)
+player = GameObject(0, 0, 1, 'player', colours.black, blocks=True, fighter=fighter_component)
 objects = [player]
 
 panel = tdl.Console(SCREEN_WIDTH, PANEL_HEIGHT)
