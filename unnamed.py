@@ -108,6 +108,24 @@ class BasicMonster:
 			elif player.fighter.hp > 0:
 				monster.fighter.attack(player)
 
+class ConfusedMonster:
+	
+	def __init__(self, old_ai, num_turns=5):
+		self.old_ai = old_ai
+		self.num_turns = num_turns
+
+	def take_turn(self):
+		if self.num_turns > 0:
+			if randint(1, 100) < 33 and self.owner.distance_to(player) < 2:
+				monster.fighter.attack(player)
+			else:
+					self.owner.move(randint(-1, 1), randint(-1, 1))
+			self.num_turns -= 1
+
+		else:
+			self.owner.ai = self.old_ai
+			message('The ' + self.owner.name + ' is no longer confused.', colours.red)
+
 class Item:
 
 	def __init__(self, use_function=None):
@@ -256,8 +274,19 @@ def place_objects(room):
 		y = randint(room.y1 + 1, room.y2 - 1)
 
 		if not is_blocked(x, y):
-			item_component = Item(use_function=cast_heal)
-			item = GameObject(x, y, '!', 'healing potion', colours.violet, item=item_component)
+			num = randint(0, 100)
+			if num < 70:
+
+				item_component = Item(use_function=cast_heal)
+				item = GameObject(x, y, '!', 'healing potion', colours.violet, item=item_component)
+			elif num < 70+15:
+				item_component = Item(use_function=cast_lightning)
+
+				item = GameObject(x, y, '#', 'Bolt Scroll', colours.light_yellow, item=item_component)
+			else:
+				item_component = Item(use_function=cast_lightning)
+
+				item = GameObject(x, y, '#', 'Confuse Scroll', colours.yellow, item=item_component)
 
 
 			objects.append(item)
@@ -317,7 +346,47 @@ def cast_heal():
 			message('You are already at full health.', colours.red)
 			return 'cancelled'
 		message('Your wounds start to feel better!', colours.light_violet)
-		player.fighter.heal(player.fighter.max_hp * 0.25)
+		player.fighter.heal(int(player.fighter.max_hp * 0.25))
+
+def cast_lightning():
+	monster = closest_monster(5)
+
+
+	if monster is None:
+		message('No ememy is close enough to strike.', colours.red)
+		return 'cancelled'
+
+	message('A bolt of lightning strikes the ' + monster.name + ' with a loud zap! You deal ' + str(20) + ' damage.', colours.light_blue)
+	monster.fighter.take_damage(20)
+
+def cast_confuse():
+	monster = closest_monster(7)
+
+	if monster is None:
+		message('No ememy is close enough to confuse.', colours.red)
+		return 'cancelled'
+
+	old_ai = monster.ai
+	monster.ai = ConfusedMonster(old_ai)
+	monster.ai.owner = monster
+	message('A fugue comes over the ' + monster.name + '!', colours.light_green)
+
+
+def closest_monster(max_range):
+	closest_enemy = None
+	closest_dist = max_range + 1
+
+	for obj in objects:
+		if obj.fighter and not obj == player and (obj.x, obj.y) in visible_tiles:
+			dist = player.distance_to(obj)
+
+			if dist < closest_dist:
+				closest_enemy = obj
+				closest_dist = dist
+
+	return closest_enemy
+
+
 
 def player_move_or_attack(dx, dy):
 	global fov_recompute
