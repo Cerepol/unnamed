@@ -1,11 +1,15 @@
-import tdl
-import colours
+"""This is a shitty unnamed roguelike project"""
 import math
 import textwrap
 from random import randint
 
+from bearlibterminal import terminal as t
+from tdl.map import quickFOV
+import colours
+
+
 #Screen Constants
-SCREEN_WIDTH= 80
+SCREEN_WIDTH = 80
 SCREEN_HEIGHT = 50
 LIMIT_FPS = 60
 
@@ -17,6 +21,10 @@ ROOM_MIN_SIZE = 6
 MAX_ROOMS = 30
 MAX_ROOM_MONSTERS = 3
 MAX_ROOM_ITEMS = 2
+
+
+UI_LAYER = 250
+MENU_LAYER = 255
 
 #Player Constants
 FOV_ALGO = 'BASIC'
@@ -31,6 +39,7 @@ MSG_X = BAR_WIDTH + 2
 MSG_WIDTH = SCREEN_WIDTH - BAR_WIDTH - 2
 MSG_HEIGHT = PANEL_HEIGHT - 1
 INVENTORY_WIDTH = 50
+BLOCK_CHAR = '\u2588'
 
 colour_light_wall = (150, 150, 100)
 colour_dark_wall = (0, 0, 100)
@@ -38,125 +47,62 @@ colour_light_ground = (200, 200, 150)
 colour_dark_ground = (50, 50, 150)
 
 
+###################
+# Building Blocks #
+###################
+
+
 class Rect:
+	"""Basic 2D Rectangle"""	
 	def __init__(self, x, y, w, h):
-			self.x1 = x
-			self.y1 = y
-			self.x2 = x + w
-			self.y2 = y + h
+		self.x1 = x
+		self.y1 = y
+		self.x2 = x + w
+		self.y2 = y + h
 
 	def center(self):
+		"""Finds the center of the rectangle"""
 		center_x = (self.x1 + self.x2) // 2
 		center_y = (self.y1 + self.y2) // 2
 		return (center_x, center_y)
 
 	def intersect(self, other):
-		return (self.x1 <= other.x2 and self.x2 >= other.x1 and
-				self.y1 <= other.y2 and self.y2 >= other.y1)
+		"""Checks if the other rectangle intersects with this one"""
+		return (self.x1 <= other.x2 and self.x2 >= other.x1 and 
+										self.y1 <= other.y2 and self.y2 >= other.y1)
 
 class Tile:
-	def __init__(self, blocked, block_sight = None):
+	"""Defines a singular Tile for the map"""
+	# pylint: disable=too-few-public-methods
+	def __init__(self, blocked, block_sight=None):
 		self.blocked = blocked
 
 		#No tile starts explored
 		self.explored = False
 
 		#Any blocking tile should also block sight
-		if block_sight is None: block_sight = blocked
-		self.block_sight = block_sight
+		if block_sight is None: 
+			block_sight = blocked
+		self.block_sight = block_sight		
 
-class Fighter:
-
-	def __init__(self, hp, defense, power, death_function=None):
-		self.max_hp = hp
-		self.hp = hp
-		self.defense = defense
-		self.power = power
-		self.death_function = death_function
-
-	def take_damage(self, damage):
-		if damage > 0:
-			self.hp -= damage
-
-		if self.hp <= 0:
-			function = self.death_function
-			if function is not None:
-				function(self.owner)
-
-	def attack(self, target):
-		damage = self.power - target.fighter.defense
-
-		if damage > 0:
-			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' damage.')
-			target.fighter.take_damage(damage)
-		else:
-			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
-
-	def heal(self, amount):
-		self.hp += amount
-
-		if self.hp > self.max_hp:
-			self.hp = self.max_hp
-
-class BasicMonster:
-	def take_turn(self):
-		monster = self.owner
-
-		if(monster.x, monster.y) in visible_tiles:
-			if monster.distance_to(player) >= 2:
-				monster.move_towards(player.x, player.y)
-			elif player.fighter.hp > 0:
-				monster.fighter.attack(player)
-
-class ConfusedMonster:
-	
-	def __init__(self, old_ai, num_turns=5):
-		self.old_ai = old_ai
-		self.num_turns = num_turns
-
-	def take_turn(self):
-		if self.num_turns > 0:
-			if randint(1, 100) < 33 and self.owner.distance_to(player) < 2:
-				monster.fighter.attack(player)
-			else:
-					self.owner.move(randint(-1, 1), randint(-1, 1))
-			self.num_turns -= 1
-
-		else:
-			self.owner.ai = self.old_ai
-			message('The ' + self.owner.name + ' is no longer confused.', colours.red)
-
-class Item:
-
-	def __init__(self, use_function=None):
-		self.use_function = use_function
-
-	def use(self):
-		if self.use_function is None:
-			message('The ' + self.owner.name + ' cannot be used.')
-		else:
-			result = self.use_function()
-			if result != ('cancelled' or 'permanent'):
-				inventory.remove(self.owner) #destory one use items
-
-	def pick_up(self):
-		if len(inventory) >= 52:
-			message('Your inventory is full, cannot pick up ' + self.owner.name + '.', colours.red)
-		else:
-			inventory.append(self.owner)
-			objects.remove(self.owner)
-			message('You picked up a ' + self.owner.name + '!', colours.green)
-
+###################
+# Game Components #
+###################
 
 class GameObject:
+	"""Basic GameObject
 
-	def __init__(self, x, y, char, name, colour, blocks=False, fighter=None, ai=None, item=None):
+	Uses an optional component system to define behaviour and purpose
+	"""
+	# pylint: disable=too-many-instance-attributes
+	def __init__(self, x, y, char, name, rgb, blocks=False, fighter=None, ai=None, item=None):
+		# pylint: disable=too-many-arguments
 		self.name = name
 		self.blocks = blocks
 		self.x = x
 		self.y = y
 		self.char = char
-		self.colour = colour
+		self.rgb = rgb
 
 		self.fighter = fighter
 		if self.fighter:
@@ -171,11 +117,13 @@ class GameObject:
 			self.ai.owner = self
 
 	def move(self, dx, dy):
+		"""Moves the object by the x,y deltas"""
 		if not is_blocked(self.x + dx, self.y + dy):
 			self.x += dx
 			self.y += dy
 
 	def move_towards(self, target_x, target_y):
+		"""Automatically guides the object towards the point"""
 		dx = target_x - self.x
 		dy = target_y - self.y
 		distance = math.sqrt(dx ** 2 + dy ** 2)
@@ -185,52 +133,165 @@ class GameObject:
 		self.move(dx, dy)
 
 	def distance_to(self, other):
-		#return the distance to another object
+		"""return the distance to another object"""
 		dx = other.x - self.x
 		dy = other.y - self.y
 		return math.sqrt(dx ** 2 + dy ** 2)
 
 	def send_to_back(self):
+		"""Purposefully adds this item to the back of the objects list"""
 		global objects
 		objects.remove(self)
 		objects.insert(0, self)
 
 	def draw(self):
+		"""Draws self onto the terminal"""
 		global visible_tiles
 
 		if (self.x, self.y) in visible_tiles:
-			con.draw_char(self.x, self.y, self.char, self.colour, bg=None)
+			set_colour(self.rgb, 255)
+			t.put(self.x, self.y, self.char)
+			#con.draw_char(self.x, self.y, self.char, self.colour, bg=None)
 
 	def clear(self):
-		con.draw_char(self.x, self.y, ' ', self.colour, bg=None)
+		"""Clears self off the board"""
+		t.put(self.x, self.y, ' ')
+		#con.draw_char(self.x, self.y, ' ', self.colour, bg=None)
 
+class Fighter:
+	"""Fighter component
+
+	This component is necessary for any gameobject to engage in fighting
+	death_function is used to cleanup upon death, such as leaving a corpse	
+	"""
+
+	def __init__(self, hp, defense, power, death_function=None):
+		self.max_hp = hp
+		self.hp = hp
+		self.defense = defense
+		self.power = power
+		self.death_function = death_function
+
+	def take_damage(self, damage):
+		"""Damages the actor for the specificed amount, calls death_function if available"""
+		if damage > 0:
+			self.hp -= damage
+
+		if self.hp <= 0:
+			function = self.death_function
+			if function is not None:
+				#Owner is set by GameObject which is required for this to be accessed
+				function(self.owner) 
+
+	def attack(self, target):
+		"""Launches an attack against the target"""
+		damage = self.power - target.fighter.defense
+
+		if damage > 0:
+			
+			message(self.owner.name.capitalize() + ' attacks '  
+											+ target.name + ' for ' + str(damage) + ' damage.') 
+			target.fighter.take_damage(damage)
+		else:
+			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!') 
+
+	def heal(self, amount):
+		"""Heals self for specificed amount"""
+		self.hp += amount
+
+		if self.hp > self.max_hp:
+			self.hp = self.max_hp
+
+class BasicMonster:
+	"""Basic Monster AI, can take own turn"""
+
+	def take_turn(self):
+		"""Takes turn towards the player if visible"""
+		monster = self.owner 
+
+		if(monster.x, monster.y) in visible_tiles:
+			if monster.distance_to(player) >= 2:
+				monster.move_towards(player.x, player.y)
+			elif player.fighter.hp > 0:
+				monster.fighter.attack(player)
+
+class ConfusedMonster:
+	"""Replacement AI for confused AI"""
+
+	def __init__(self, old_ai, num_turns=5):
+		self.old_ai = old_ai
+		self.num_turns = num_turns
+
+	def take_turn(self):
+		"""Confused TakeTurn, move with chance of attack if beside player"""
+		if self.num_turns > 0:
+			if randint(1, 100) < 33 and self.owner.distance_to(player) < 2:
+				self.owner.fighter.attack(player)
+			else:
+				self.owner.move(randint(-1, 1), randint(-1, 1))
+				self.num_turns -= 1
+
+		else:
+			self.owner.ai = self.old_ai
+			message('The ' + self.owner.name + ' is no longer confused.', colours.red)
+
+class Item:
+	"""Basic Item Class, contains methods for pickup and use"""
+
+	def __init__(self, use_function=None):
+		self.use_function = use_function
+
+	def use(self):
+		"""Use function, calls the assigned use_function"""
+		if self.use_function is None:
+			message('The ' + self.owner.name + ' cannot be used.') 
+		else:
+			result = self.use_function()
+			if result != ('cancelled' or 'permanent'):
+				inventory.remove(self.owner)
+
+	def pick_up(self):
+		"""Places item in inventory if picked up by player"""
+		if len(inventory) >= 52:
+			message('Your inventory is full, cannot pick up ' + self.owner.name + '.', colours.red)
+		else:
+			inventory.append(self.owner) 
+			objects.remove(self.owner)
+			message('You picked up a ' + self.owner.name + '!', colours.green)
+
+#################
+# Map Functions #
+#################
 def create_h_tunnel(x1, x2, y):
+	"""Creates a horizontal tunnel between the 2 rooms"""
 	global my_map
 	for x in range(min(x1, x2), max(x1, x2) + 1):
 		my_map[x][y].blocked = False
 		my_map[x][y].block_sight = False
 
 def create_v_tunnel(y1, y2, x):
+	"""Creates a vertical tunnel between the 2 rooms"""
 	global my_map
 	for y in range(min(y1, y2), max(y1, y2) + 1):
 		my_map[x][y].blocked = False
 		my_map[x][y].block_sight = False
 
 def is_visible_tile(x, y):
+	"""Checks if a tile is in player FOV"""
 	global my_map
  
 	if x >= MAP_WIDTH or x < 0:
 		return False
 	elif y >= MAP_HEIGHT or y < 0:
 		return False
-	elif my_map[x][y].blocked == True:
+	elif my_map[x][y].blocked:
 		return False
-	elif my_map[x][y].block_sight == True:
+	elif my_map[x][y].block_sight:
 		return False
-	else:
-		return True
+	return True
 
 def is_blocked(x, y):
+	"""Returns if the tile location is blocked"""
 	if my_map[x][y].blocked:
 		return True
 
@@ -241,13 +302,15 @@ def is_blocked(x, y):
 	return False
 
 def create_room(room):
-		global my_map
-		for x in range(room.x1 + 1, room.x2):
-			for y in range(room.y1 + 1, room.y2):
-				my_map[x][y].blocked = False
-				my_map[x][y].block_sight = False
+	"""Attempts to create a room"""
+	global my_map
+	for x in range(room.x1 + 1, room.x2):
+		for y in range(room.y1 + 1, room.y2):
+			my_map[x][y].blocked = False
+			my_map[x][y].block_sight = False
 
 def place_objects(room):
+	"""places objects like monsters and items into the room"""
 	num_monsters = randint(0, MAX_ROOM_MONSTERS)
 
 	for i in range(num_monsters):
@@ -257,13 +320,15 @@ def place_objects(room):
 		if not is_blocked(x, y):
 			if randint(0, 100) < 80:
 
-				fighter_c = Fighter(hp=10,defense=0,power=3, death_function=monster_death)
+				fighter_c = Fighter(hp=10, defense=0, power=3, death_function=monster_death)
 				ai_c = BasicMonster()
-				monster = GameObject(x, y, 'o', 'Orc', colours.desaturated_green, blocks=True, fighter=fighter_c, ai=ai_c)
+				monster = GameObject(x, y, 'o', 'Orc', colours.desaturated_green, blocks=True, 
+									fighter=fighter_c, ai=ai_c)
 			else:
-				fighter_c = Fighter(hp=12,defense=1,power=3, death_function=monster_death)
+				fighter_c = Fighter(hp=12, defense=1, power=3, death_function=monster_death)
 				ai_c = BasicMonster()
-				monster = GameObject(x, y, 'T', 'Troll', colours.darker_green, blocks=True, fighter=fighter_c, ai=ai_c)
+				monster = GameObject(x, y, 'T', 'Troll', colours.darker_green, 
+					blocks=True, fighter=fighter_c, ai=ai_c)
 
 			objects.append(monster)
 
@@ -293,11 +358,41 @@ def place_objects(room):
 
 			item.send_to_back()
 
+def closest_monster(max_range):
+	"""Finds the closest monster within range"""
+	closest_enemy = None
+	closest_dist = max_range + 1
+
+	for obj in objects:
+		if obj.fighter and obj != player and (obj.x, obj.y) in visible_tiles:
+			dist = player.distance_to(obj)
+
+			if dist < closest_dist:
+				closest_enemy = obj
+				closest_dist = dist
+
+	return closest_enemy
+
+def get_names_under_mouse():
+	"""Returns name of objects under the mouse cursor"""
+	global visible_tiles
+
+	x = t.state(t.TK_MOUSE_X)
+	y = t.state(t.TK_MOUSE_Y)
+
+	names = [obj.name for obj in objects
+		if obj.x == x and obj.y == y and (obj.x, obj.y) in visible_tiles]
+
+
+	names = ', '.join(names)
+	return names.capitalize() 
+
 def make_map():
+	"""Makes the map out of tiles"""
 	global my_map
 
-	my_map = [[ Tile(True)
-		for y in range(MAP_HEIGHT) ]
+	my_map = [[Tile(True)
+		for y in range(MAP_HEIGHT)]
 			for x in range(MAP_WIDTH)]
 
 	rooms = []
@@ -309,7 +404,7 @@ def make_map():
 		x = randint(0, MAP_WIDTH - w - 1)
 		y = randint(0, MAP_HEIGHT - h - 1)
 
-		new_room =  Rect(x, y, w, h)
+		new_room = Rect(x, y, w, h)
 		failed = False
 		for other_room in rooms:
 			if new_room.intersect(other_room):
@@ -340,26 +435,41 @@ def make_map():
 			rooms.append(new_room)
 			num_rooms += 1
 
+#########################
+# Item/Player Functions #
+#########################
+def set_colour(rgb, alpha=255):
+	"""Wrapper for bearlibterminal color method, so I can spell properly"""	
+	hexcolour = t.color_from_argb(alpha, rgb[0], rgb[1], rgb[2])
+	t.color(hexcolour)
+
+def set_bkcolour(rgb, alpha=255):
+	"""Wrapper for the bearlibterminal bkcolor method, so I can spell properly"""
+	hexcolour = t.color_from_argb(alpha, rgb[0], rgb[1], rgb[2])
+	t.color(hexcolour)
+
 def cast_heal():
-		#heal the player
-		if player.fighter.hp == player.fighter.max_hp:
-			message('You are already at full health.', colours.red)
-			return 'cancelled'
-		message('Your wounds start to feel better!', colours.light_violet)
-		player.fighter.heal(int(player.fighter.max_hp * 0.25))
+	"""Heals the user for an amount"""
+	if player.fighter.hp == player.fighter.max_hp:
+		message('You are already at full health.', colours.red)
+		return 'cancelled'
+	message('Your wounds start to feel better!', colours.light_violet)
+	player.fighter.heal(int(player.fighter.max_hp * 0.25))
 
 def cast_lightning():
+	"""Does ranged damage to the closest enemy"""
 	monster = closest_monster(5)
-
 
 	if monster is None:
 		message('No ememy is close enough to strike.', colours.red)
 		return 'cancelled'
 
-	message('A bolt of lightning strikes the ' + monster.name + ' with a loud zap! You deal ' + str(20) + ' damage.', colours.light_blue)
+	message('A bolt of lightning strikes the ' + monster.name + 
+									' with a loud zap! You deal ' + str(20) + ' damage.', colours.light_blue)
 	monster.fighter.take_damage(20)
 
 def cast_confuse():
+	"""Replaces normal AI with Confused AI"""
 	monster = closest_monster(7)
 
 	if monster is None:
@@ -371,24 +481,8 @@ def cast_confuse():
 	monster.ai.owner = monster
 	message('A fugue comes over the ' + monster.name + '!', colours.light_green)
 
-
-def closest_monster(max_range):
-	closest_enemy = None
-	closest_dist = max_range + 1
-
-	for obj in objects:
-		if obj.fighter and not obj == player and (obj.x, obj.y) in visible_tiles:
-			dist = player.distance_to(obj)
-
-			if dist < closest_dist:
-				closest_enemy = obj
-				closest_dist = dist
-
-	return closest_enemy
-
-
-
 def player_move_or_attack(dx, dy):
+	"""Figures out if the player is moving or attacking"""
 	global fov_recompute
 	global game_state
 
@@ -410,28 +504,8 @@ def player_move_or_attack(dx, dy):
 		player.move(dx, dy)
 		fov_recompute = True
 
-def player_death(player):
-	global game_state
-	message('You Died!', colours.red)
-	game_state = 'dead'
-
-	player.char = '%'
-	player.colour = colours.dark_red
-
-def get_names_under_mouse():
-	global visible_tiles
-	global mouse_coord
-
-	(x, y) = mouse_coord
-
-	names = [obj.name for obj in objects
-		if obj.x == x and obj.y == y and (obj.x, obj.y) in visible_tiles]
-
-
-	names = ', '.join(names)
-	return names.capitalize() 
-
 def monster_death(monster):
+	"""Basic Monster Death funciton"""
 	message(monster.name.capitalize() + ' is dead!', colours.orange)
 	monster.char = '%'
 	monster.colour = colours.dark_red
@@ -441,64 +515,87 @@ def monster_death(monster):
 	monster.name = monster.name + ' corpse'
 	monster.send_to_back()
 
+def player_death(player):
+	"""Normal Player Death function"""
+	global game_state
+	message('You Died!', colours.red)
+	game_state = 'dead'
+
+	player.char = '%'
+	player.colour = colours.dark_red
+
+################
+# UI Functions #
+################
 def menu(header, options, width):
-	if len(options) > 52: raise ValueError('Cannot have a menu with more than 52 options')
+	"""Creates a menu"""
+	if len(options) > 52: 
+		raise ValueError('Cannot have a menu with more than 52 options')
 
 	header_wrapped = textwrap.wrap(header, width)
 	header_height = len(header_wrapped)
 	height = len(options) + header_height
 
-	window = tdl.Console(width, height)
+	#window = tdl.Console(width, height)
 
-	window.draw_rect(0, 0, width, height, None, fg=colours.white, bg=None)
+	x = SCREEN_WIDTH//2 - width//2
+	y = SCREEN_HEIGHT//2 - height//2
+
+	t.layer(MENU_LAYER)
+	t.puts(x, y, None, width=width, height=height)	
+	#window.draw_rect(0, 0, width, height, None, fg=colours.white, bg=None)
 
 	for i, line in enumerate(header_wrapped):
-		window.draw_str(0, 0 + i, header_wrapped[i])
+		t.puts(x, y + i, header_wrapped[i])
+		#window.draw_str(0, 0 + i, header_wrapped[i])
 
 		y = header_height
 		letter_index = ord('a')
 		for option_text in options:
 			text = '(' + chr(letter_index) + ')' + option_text
-			window.draw_str(0, y, text, bg=None)
+			t.puts(0, y, text)
+			#window.draw_str(0, y, text, bg=None)
 			y += 1
 			letter_index += 1
 			if letter_index == ord('z'):
 				letter_index = ord('A')
 
-		x = SCREEN_WIDTH//2 - width//2
-		y = SCREEN_HEIGHT//2 - height//2
-		root.blit(window, x, y, width, height, 0, 0)
+		
+		#root.blit(window, x, y, width, height, 0, 0)
 
-		tdl.flush()
-		key = tdl.event.key_wait()
-		key_char = key.char
-		if key_char == '':
-			key_char = ' '
+		#tdl.flush()
+		t.refresh()
+		key = t.read()
 
-		index = ord(key_char) - ord('a')
-		if index > 26:
-			index = ord(key_char) - ord('A')
-
-		if index >= 0 and index < len(options):
+		index = key - 4
+		if index >= 0 and index <= 51:
+			if t.state(t.TK_SHIFT):
+				index += 26
 			return index
 
 		return None
 
 
 def inventory_menu(header):
-	if len(inventory) == 0:
+	"""Defines an inventory menu"""
+
+	if not inventory:
 		options = ['Inventory is empty.']
 	else:
 		options = [item.name for item in inventory]
 
 	index = menu(header, options, INVENTORY_WIDTH)
 
-	if index is None or len(inventory) == 0: return None
+	if index is None or not inventory: 
+		return None
 	return inventory[index].item
 
 
 
-def message(new_msg, colour = colours.white):
+def message(new_msg, colour=colours.white):
+	"""Creates a new message for the message log"""
+
+	set_colour(colour)
 	new_msg_lines = textwrap.wrap(new_msg, MSG_WIDTH)
 
 	for line in new_msg_lines:
@@ -509,195 +606,202 @@ def message(new_msg, colour = colours.white):
 
 
 def render_bar(x, y, total_width, name, value, maximum, bar_colour, back_colour):
+	"""Renders UI Bar"""
 	bar_width = int(float(value) / maximum * total_width)
+	
+	fill = BLOCK_CHAR * total_width
 
-	panel.draw_rect(x, y, total_width, 1, None, bg=back_colour)
+	t.layer(UI_LAYER)
+	set_colour(back_colour)
+	t.puts(x, y, fill, width=total_width, height=1)
+	#panel.draw_rect(x, y, total_width)
 
 	if bar_width > 0:
-		panel.draw_rect(x, y, bar_width, 1, None, bg=bar_colour)
+		set_colour(bar_colour)
+		t.puts(x, y, fill, width=bar_width, height=1)
+		#panel.draw_rect(x, y, bar_width, 1, None, bg=bar_colour)
 
 	text = name + ': ' + str(value) + '/' + str(maximum)
 	x_centered = x + (total_width - len(text)) // 2
-	panel.draw_str(x_centered, y, text, fg=colours.white, bg=None)
 
-
+	t.layer(UI_LAYER + 1)
+	set_colour(colours.white)
+	t.puts(x_centered, y, text)
 
 
 def render_all():
+	"""Goes through object list and renders everything"""
 	global fov_recompute
 	global visible_tiles
 
 	if fov_recompute:
 		fov_recompute = False
-		visible_tiles = tdl.map.quickFOV(player.x, player.y, 
-										is_visible_tile, 
-										fov = FOV_ALGO,
-										radius = TORCH_RADIUS,
-										lightWalls = FOV_LIGHT_WALLS)
+		visible_tiles = quickFOV(player.x, player.y,
+								is_visible_tile,
+								fov=FOV_ALGO,
+								radius=TORCH_RADIUS,
+								lightWalls=FOV_LIGHT_WALLS)
+
+		#Set to the background layer before drawing the area
+		t.layer(0)
 
 		for y in range(MAP_HEIGHT):
 			for x in range(MAP_WIDTH):
+				set_colour(colours.black, 255)
 				visible = (x, y) in visible_tiles
 				wall = my_map[x][y].block_sight
 				if not visible:
 					if my_map[x][y].explored:
 						if wall:
-							con.draw_char(x,y,None,fg=None,bg=colour_dark_wall)
+							set_colour(colour_dark_wall, 255)
 						else:
-							con.draw_char(x,y,None,fg=None,bg=colour_dark_ground)
+							set_colour(colour_dark_ground, 255)
+							
 				else:
 					if wall:
-						con.draw_char(x, y, None, fg=None, bg=colour_light_wall)
+						set_colour(colour_light_wall, 255)
 					else:
-						con.draw_char(x, y, None, fg=None, bg=colour_light_ground)
+						set_colour(colour_light_ground, 255)
 
 					#add visible tile as explored
 					my_map[x][y].explored = True
+				#Draw the character on the map
+				t.put(x, y, BLOCK_CHAR)
 
-
+	t.layer(1)
 	for obj in objects:
 		if obj != player:
 			obj.draw()
 	player.draw()
 
-	#blit all we've drawn so far onto the root console
-	root.blit(con, 0, 0, MAP_WIDTH, MAP_HEIGHT, 0, 0)
-
 	#GUI Panel cleared for redraw
-	panel.clear(fg=colours.white, bg=colours.black)
+	#panel.clear(fg=colours.white, bg=colours.black)
 
 	#Print out all game messages
-	y = 1
+	t.layer(UI_LAYER)
+	y = PANEL_Y
 	for (line, colour) in game_msgs:
-		panel.draw_str(MSG_X, y, line, bg=None, fg=colour)
+		set_colour(colour)
+		t.puts(MSG_X, y, line)
+		#panel.draw_str(MSG_X, y, line, bg=None, fg=colour)
 		y += 1
 
 	#Statbar
-	render_bar(1, 1, BAR_WIDTH, 'HP', player.fighter.hp, player.fighter.max_hp, colours.dark_red, colours.darker_red)
+	render_bar(1, PANEL_Y, BAR_WIDTH, 'HP', player.fighter.hp, 
+				player.fighter.max_hp, colours.dark_red, colours.darker_red)
 
 	#Contents under mouse
-	panel.draw_str(1, 0, get_names_under_mouse(), bg=None, fg=colours.light_gray)
+	set_colour(colours.light_gray)
+	t.puts(1, PANEL_Y - 1, get_names_under_mouse())
+	#panel.draw_str(1, 0, get_names_under_mouse(), bg=None, fg=colours.light_gray)
 
 	#Blit the GUI Panel to the console
-	root.blit(panel, 0, PANEL_Y, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0)
-	
+	#root.blit(panel, 0, PANEL_Y, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0)
 
-#Key Handler
 def handle_keys():
+	"""All Key Handling for the game"""
 	global fov_recompute
 	global game_state
-	global mouse_coord
-
 
 	keypress = False
-	for event in tdl.event.get():
-		if event.type == 'KEYDOWN':
-			key = event
-			keypress = True
-		if event.type == 'MOUSEMOTION':
-			mouse_coord = event.cell
+
+	if t.has_input():
+		key = t.read()
+		keypress = True
+
 	if not keypress:
 		return 'no-turn'
 
-	if key.key == '?':
+	if key == t.TK_SLASH and t.state(t.TK_SHIFT):
 		game_state = 'help'
 		return 'help'
 
-	if key.key == 'ENTER' and key.alt:
-		tdl.set_fullscreen(not tdl.get_fullscreen())
-
-	if key.key == 'ESCAPE':
+	if key == t.TK_ESCAPE:
 		return 'exit'
 
-	#print(key.keychar)
-	#print(key.text)
-
 	if game_state == 'playing':
-	#PlayerMovement
 		fov_recompute = True
-		if key.text == 'j' or key.key == 'KP8':
+
+		if key in (t.TK_J, t.TK_KP_8):
 			player_move_or_attack(0, -1)
-		elif key.text == 'k' or key.key == 'KP2':
+		elif key in (t.TK_K, t.TK_KP_2):
 			player_move_or_attack(0, 1)
-		elif key.text == 'h' or key.key == 'KP4':
+		elif key in (t.TK_H, t.TK_KP_4):
 			player_move_or_attack(-1, 0)
-		elif key.text == 'l' or key.key == 'KP6':
+		elif key in (t.TK_L, t.TK_KP_6):
 			player_move_or_attack(1, 0)
-		elif key.text == 'y' or key.key == 'KP7':
+		elif key in (t.TK_Y, t.TK_KP_7):
 			player_move_or_attack(-1, -1)
-		elif key.text == 'u' or key.key == 'KP9':
+		elif key in (t.TK_U, t.TK_KP_9):
 			player_move_or_attack(1, -1)
-		elif key.text == 'b' or key.key == 'KP1':
+		elif key in (t.TK_B, t.TK_KP_1):
 			player_move_or_attack(-1, 1)
-		elif key.text == 'n' or key.key == 'KP3':
+		elif key in (t.TK_N, t.TK_KP_3):
 			player_move_or_attack(1, 1)
-		elif key.key == 'SPACE' or key.key == 'KP5':
+		elif key in (t.TK_SPACE, t.TK_KP_5):
 			player_move_or_attack(0, 0)
 		else:
-			if key.text == 'g':
+			if key == t.TK_G:
 				#pick up item
 				for obj in objects:
 					if obj.x == player.x and obj.y == player.y and obj.item:
 						obj.item.pick_up()
 						break
-			elif key.text == 'i':
-				chosen_item = inventory_menu('Press the key next to an item to use it, or any other to cancel.\n')
+			elif key == t.TK_I:
+				chosen_item = inventory_menu('Press the assigned key to use it, or any other to cancel.\n')
 				if chosen_item is not None:
 					chosen_item.use()
-			return 'no-turn'
+			return 'no-turn'				
 
-#===========================================================#
-# Init and Main loop
-#===========================================================#
-tdl.set_font('terminal12x12_gs_ro.png', greyscale=True)
-root = tdl.init(SCREEN_WIDTH, SCREEN_HEIGHT, title='Unnamed Roguelike', fullscreen=False)
-tdl.setFPS(LIMIT_FPS)
-tdl.force_resolution(1920, 1080)
+######################
+# Init and Main loop #
+######################
 
-#main blit console
-con = tdl.Console(MAP_WIDTH, MAP_HEIGHT)
+t.open()
+mapsize = str(SCREEN_WIDTH) + "x" + str(SCREEN_HEIGHT)
+t.set("window: size=" + mapsize + ", resizeable=true")
+t.set("font: ./terminal12x12_gs_ro.png, size=12x12")
+t.set("input.filter={keyboard, mouse+}")
+
 
 game_state = 'playing'
 player_action = None
 
 fighter_component = Fighter(hp=30, defense=2, power=5, death_function=player_death)
 player = GameObject(0, 0, 1, 'player', colours.black, blocks=True, fighter=fighter_component)
+
 objects = [player]
-
-panel = tdl.Console(SCREEN_WIDTH, PANEL_HEIGHT)
-panel.clear(fg=colours.white, bg=colours.black)
-
 
 inventory = []
 game_msgs = []
-
+visible_tiles = []
+my_map = []
 message('Welcome stranger! Prepare to perish in the Tombs of the Ancient Kings.', colours.red)
 
-
-mouse_coord = (0,0)
-
 make_map()
+
+
+
 fov_recompute = True
 
-while not tdl.event.is_window_closed():
 
-	#call the rendering to draw everything
+while player_action != 'exit':
+
+
 	render_all()
-	
-	
-	tdl.flush()
 
+	t.refresh()
 
 	for obj in objects:
 		obj.clear()
 
 	player_action = handle_keys()
-
+	
 	if game_state == 'playing' and player_action != 'no-turn':
+		t.clear()
 		for obj in objects:
 			if obj.ai:
 				obj.ai.take_turn()
 
-	if player_action == 'exit':
-		break
 
+t.close()
