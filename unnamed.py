@@ -22,18 +22,14 @@ MAX_ROOMS = 30
 MAX_ROOM_MONSTERS = 3
 MAX_ROOM_ITEMS = 2
 
-#Layer Constants
-BASE_LAYER = 0
-OBJECT_LAYER = 1
-EFFECT_LAYER = 2
+
 UI_LAYER = 250
-CURSOR_LAYER = 249
 MENU_LAYER = 255
 
 #Player Constants
-FOV_ALGO = 'SHADOW'
+FOV_ALGO = 'BASIC'
 FOV_LIGHT_WALLS = True
-TORCH_RADIUS = 7
+TORCH_RADIUS = 6
 
 #UI
 BAR_WIDTH = 20
@@ -43,8 +39,7 @@ MSG_X = BAR_WIDTH + 2
 MSG_WIDTH = SCREEN_WIDTH - BAR_WIDTH - 2
 MSG_HEIGHT = PANEL_HEIGHT - 1
 INVENTORY_WIDTH = 50
-#BLOCK_CHAR = '\u2588'
-BLOCK_CHAR = chr(219)
+BLOCK_CHAR = '\u2588'
 
 colour_light_wall = (150, 150, 100)
 colour_dark_wall = (0, 0, 100)
@@ -129,24 +124,13 @@ class GameObject:
 
 	def move_towards(self, target_x, target_y):
 		"""Automatically guides the object towards the point"""
-		#print("start")
 		dx = target_x - self.x
-		#print("dx: " + str(dx))
 		dy = target_y - self.y
-		#print("dy: " + str(dy))
 		distance = math.sqrt(dx ** 2 + dy ** 2)
-		#print("distance: " + str(distance))
 
 		dx = int(round(dx / distance))
-		#print("dx: " + str(dx))
 		dy = int(round(dy / distance))
-		#print("dy: " + str(dy) + "\n")
-
 		self.move(dx, dy)
-
-	def distance(self, x, y):
-		"""Returns the distance to an x and y"""
-		return math.sqrt((x - self.x) ** 2 + (y - self.y) ** 2)
 
 	def distance_to(self, other):
 		"""return the distance to another object"""
@@ -338,12 +322,12 @@ def place_objects(room):
 
 				fighter_c = Fighter(hp=10, defense=0, power=3, death_function=monster_death)
 				ai_c = BasicMonster()
-				monster = GameObject(x, y, chr(7), 'blob', colours.desaturated_green, blocks=True, 
+				monster = GameObject(x, y, 'o', 'Orc', colours.desaturated_green, blocks=True, 
 									fighter=fighter_c, ai=ai_c)
 			else:
 				fighter_c = Fighter(hp=12, defense=1, power=3, death_function=monster_death)
 				ai_c = BasicMonster()
-				monster = GameObject(x, y, chr(4), 'Big blob', colours.darker_green, 
+				monster = GameObject(x, y, 'T', 'Troll', colours.darker_green, 
 					blocks=True, fighter=fighter_c, ai=ai_c)
 
 			objects.append(monster)
@@ -356,21 +340,18 @@ def place_objects(room):
 
 		if not is_blocked(x, y):
 			num = randint(0, 100)
-			if num < 55:
+			if num < 70:
+
 				item_component = Item(use_function=cast_heal)
 				item = GameObject(x, y, '!', 'healing potion', colours.violet, item=item_component)
-
-			elif num < 55+15:
+			elif num < 70+15:
 				item_component = Item(use_function=cast_lightning)
-				item = GameObject(x, y, '#', 'Bolt Scroll', colours.light_blue, item=item_component)
 
-			elif num < 55+15+15:
+				item = GameObject(x, y, '#', 'Bolt Scroll', colours.light_yellow, item=item_component)
+			else:
 				item_component = Item(use_function=cast_lightning)
-				item = GameObject(x, y, '#', 'Confuse Scroll', colours.blue, item=item_component)
 
-			elif num <= 55+15+15+15:
-				item_component = Item(use_function=cast_fireball)
-				item = GameObject(x, y, '#', 'Fireball Scroll', colours.dark_blue, item=item_component)
+				item = GameObject(x, y, '#', 'Confuse Scroll', colours.yellow, item=item_component)
 
 
 			objects.append(item)
@@ -391,92 +372,6 @@ def closest_monster(max_range):
 				closest_dist = dist
 
 	return closest_enemy
-
-def draw_cursor(x, y):
-	"""Draws a cursor at the specified point"""
-
-	if x != None:
-		t.layer(CURSOR_LAYER)
-		t.clear_area(0, 0, MAP_WIDTH, MAP_HEIGHT)
-		set_colour(colours.white, 150)
-		t.put(x, y, BLOCK_CHAR)
-		t.refresh()
-	else:
-		t.layer(CURSOR_LAYER)
-		t.clear_area(0, 0, MAP_WIDTH, MAP_HEIGHT)
-
-def target_tile(max_range=None):
-	"""Selects a tile either from a mouse click or selection"""
-
-	x = player.x
-	y = player.y
-	mx = t.state(t.TK_MOUSE_X)
-	my = t.state(t.TK_MOUSE_Y)
-
-	draw_cursor(x, y)
-
-	message("Select using the mouse or movements keys. Use M1, Enter, 5 to confirm and ESC/SPACE to cancel", colours.light_cyan)
-	render_all()
-
-	key = t.read()
-	while key not in (t.TK_MOUSE_LEFT, t.TK_ENTER, t.TK_KP_5, t.TK_ESCAPE, t.TK_SPACE):
-		dx = x
-		dy = y
-		if key in (t.TK_J, t.TK_KP_8):
-			dy -= 1
-		elif key in (t.TK_K, t.TK_KP_2):
-			dy += 1
-		elif key in (t.TK_H, t.TK_KP_4):
-			dx -= 1
-		elif key in (t.TK_L, t.TK_KP_6):
-			dx += 1
-		elif key in (t.TK_Y, t.TK_KP_7):
-			dx -= 1
-			dy -= 1
-		elif key in (t.TK_U, t.TK_KP_9):
-			dx += 1
-			dy -= 1
-		elif key in (t.TK_B, t.TK_KP_1):
-			dx -= 1
-			dy += 1
-		elif key in (t.TK_N, t.TK_KP_3):
-			dx += 1
-			dy += 1
-		zx = t.state(t.TK_MOUSE_X)
-		zy = t.state(t.TK_MOUSE_Y)
-		if zx != mx or zy != my:
-			mx = zx
-			my = zy
-			dx = mx
-			dy = my
-
-		#Check for Out of Bounds/Range
-		if 0 < dx and dx < MAP_WIDTH and 0 < dy and dy < MAP_HEIGHT:
-			#Check for within range
-			if player.distance(dx, dy) <= max_range:
-				x = dx
-				y = dy
-
-		draw_cursor(x, y)
-		if t.has_input():
-			key = t.read()
-		else:
-			key = None
-
-	#Check if it was a mouse confirm or a key confirm/cancel
-	draw_cursor(None, None)
-	if key == t.TK_MOUSE_LEFT:
-		x = t.state(t.TK_MOUSE_X)
-		y = t.state(t.TK_MOUSE_Y)
-	#Cancel selection process
-	elif key in (t.TK_ESCAPE, t.TK_SPACE):
-		return (None, None)
-	#Return coordinates selected
-	return (x, y)
-	
-
-
-
 
 def get_names_under_mouse():
 	"""Returns name of objects under the mouse cursor"""
@@ -573,78 +468,6 @@ def cast_lightning():
 									' with a loud zap! You deal ' + str(20) + ' damage.', colours.light_blue)
 	monster.fighter.take_damage(20)
 
-def cast_fireball():
-	"""Player targeted aoe spell"""
-	(x, y) = target_tile(6)
-	if x is None:
-		message("Cancelled")
-		return 'cancelled'
-	message('The fireball explodes!', colours.orange)
-
-	t.layer(EFFECT_LAYER)
-
-	effected_points = [(x + dx, y + dy) for (dx, dy) in 
-		((-1, -1), (-1, 1), (-1, 0), (0, -1), (0, 0), (0, +1), (+1, 0), (+1, -1), (+1, +1))]
-
-	set_colour(colours.red)
-	for (x, y) in effected_points[4:-4]:
-		t.put(x, y, chr(177))
-	t.refresh()
-	t.delay(50)
-
-	set_colour(colours.orange)
-	for (x, y) in effected_points[2:-2]:
-		t.put(x, y, chr(177))
-	t.refresh()
-	t.delay(50)
-
-	set_colour(colours.red)
-	for (x, y) in effected_points:
-		t.put(x, y, chr(177))
-	t.refresh()
-	t.delay(50)
-
-	set_colour(colours.orange)
-	for (x, y) in effected_points:
-		t.put(x, y, chr(177))
-	t.refresh()
-	t.delay(50)
-
-	set_colour(colours.red)
-	for (x, y) in effected_points:
-		t.put(x, y, chr(177))
-	t.refresh()
-	t.delay(100)
-
-	t.clear_area(effected_points[0][0], effected_points[0][1], 
-				effected_points[-1][0], effected_points[-1][1])
-	set_colour(colours.orange)
-	for (x, y) in effected_points[2:-2]:
-		t.put(x, y, chr(177))
-	t.refresh()
-	t.delay(100)
-
-
-	t.clear_area(effected_points[0][0], effected_points[0][1], 
-				effected_points[-1][0], effected_points[-1][1])
-	set_colour(colours.dark_red)
-	for (x, y) in effected_points[4:-4]:
-		t.put(x, y, chr(177))
-	t.refresh()
-	t.delay(150)
-
-
-
-	t.clear_area(effected_points[0][0], effected_points[0][1], 
-				effected_points[-1][0], effected_points[-1][1])
-	t.refresh()
-
-	for obj in objects:
-		if (obj.x, obj.y) in effected_points and obj.fighter:
-			message('The ' + obj.name + ' takes 15 damage.', colours.orange)
-			obj.fighter.take_damage(15)
-
-
 def cast_confuse():
 	"""Replaces normal AI with Confused AI"""
 	monster = closest_monster(7)
@@ -685,7 +508,7 @@ def monster_death(monster):
 	"""Basic Monster Death funciton"""
 	message(monster.name.capitalize() + ' is dead!', colours.orange)
 	monster.char = '%'
-	monster.rgb = colours.dark_red
+	monster.colour = colours.dark_red
 	monster.blocks = False
 	monster.fighter = None
 	monster.ai = None
@@ -699,7 +522,7 @@ def player_death(player):
 	game_state = 'dead'
 
 	player.char = '%'
-	player.rgb = colours.dark_red
+	player.colour = colours.dark_red
 
 ################
 # UI Functions #
@@ -713,49 +536,44 @@ def menu(header, options, width):
 	header_height = len(header_wrapped)
 	height = len(options) + header_height
 
-
 	#window = tdl.Console(width, height)
 
 	x = SCREEN_WIDTH//2 - width//2
 	y = SCREEN_HEIGHT//2 - height//2
+
 	t.layer(MENU_LAYER)
-	set_colour(colours.black, 200)
-	t.puts(0, 0, BLOCK_CHAR * width * height, width=width, height=height)	
-	set_colour(colours.white)
+	t.puts(x, y, None, width=width, height=height)	
 	#window.draw_rect(0, 0, width, height, None, fg=colours.white, bg=None)
 
 	for i, line in enumerate(header_wrapped):
 		t.puts(x, y + i, header_wrapped[i])
-		#print("header at " + str(y + i))
 		#window.draw_str(0, 0 + i, header_wrapped[i])
 
-	y += header_height
-	letter_index = ord('a')
-	for option_text in options:
-		text = '(' + chr(letter_index) + ')' + option_text
-		t.puts(x, y, text)
-		#window.draw_str(0, y, text, bg=None)
-		y += 1
-		letter_index += 1
-		if letter_index == ord('z'):
-			letter_index = ord('A')
+		y = header_height
+		letter_index = ord('a')
+		for option_text in options:
+			text = '(' + chr(letter_index) + ')' + option_text
+			t.puts(0, y, text)
+			#window.draw_str(0, y, text, bg=None)
+			y += 1
+			letter_index += 1
+			if letter_index == ord('z'):
+				letter_index = ord('A')
 
 		
-	#root.blit(window, x, y, width, height, 0, 0)
+		#root.blit(window, x, y, width, height, 0, 0)
 
-	#tdl.flush()
-	t.refresh()
-	key = t.read()
+		#tdl.flush()
+		t.refresh()
+		key = t.read()
 
-	t.clear_area(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
-	index = key - 4
-	if index >= 0 and index <= 51:
-		if t.state(t.TK_SHIFT):
-			index += 26
+		index = key - 4
+		if index >= 0 and index <= 51:
+			if t.state(t.TK_SHIFT):
+				index += 26
+			return index
 
-	if index < len(options):
-		return index
-	return None
+		return None
 
 
 def inventory_menu(header):
@@ -822,11 +640,10 @@ def render_all():
 								is_visible_tile,
 								fov=FOV_ALGO,
 								radius=TORCH_RADIUS,
-								lightWalls=FOV_LIGHT_WALLS,
-								sphere=False)
+								lightWalls=FOV_LIGHT_WALLS)
 
 		#Set to the background layer before drawing the area
-		t.layer(BASE_LAYER)
+		t.layer(0)
 
 		for y in range(MAP_HEIGHT):
 			for x in range(MAP_WIDTH):
@@ -851,7 +668,7 @@ def render_all():
 				#Draw the character on the map
 				t.put(x, y, BLOCK_CHAR)
 
-	t.layer(OBJECT_LAYER)
+	t.layer(1)
 	for obj in objects:
 		if obj != player:
 			obj.draw()
@@ -862,7 +679,6 @@ def render_all():
 
 	#Print out all game messages
 	t.layer(UI_LAYER)
-	t.clear_area(0, PANEL_Y, SCREEN_WIDTH, PANEL_HEIGHT)
 	y = PANEL_Y
 	for (line, colour) in game_msgs:
 		set_colour(colour)
@@ -877,8 +693,10 @@ def render_all():
 	#Contents under mouse
 	set_colour(colours.light_gray)
 	t.puts(1, PANEL_Y - 1, get_names_under_mouse())
+	#panel.draw_str(1, 0, get_names_under_mouse(), bg=None, fg=colours.light_gray)
 
-	t.refresh()
+	#Blit the GUI Panel to the console
+	#root.blit(panel, 0, PANEL_Y, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0)
 
 def handle_keys():
 	"""All Key Handling for the game"""
@@ -889,8 +707,7 @@ def handle_keys():
 
 	if t.has_input():
 		key = t.read()
-		if key != t.TK_MOUSE_MOVE:
-			keypress = True
+		keypress = True
 
 	if not keypress:
 		return 'no-turn'
@@ -934,7 +751,7 @@ def handle_keys():
 				chosen_item = inventory_menu('Press the assigned key to use it, or any other to cancel.\n')
 				if chosen_item is not None:
 					chosen_item.use()
-		return 'turn'			
+			return 'no-turn'				
 
 ######################
 # Init and Main loop #
@@ -946,11 +763,12 @@ t.set("window: size=" + mapsize + ", resizeable=true")
 t.set("font: ./terminal12x12_gs_ro.png, size=12x12")
 t.set("input.filter={keyboard, mouse+}")
 
+
 game_state = 'playing'
 player_action = None
 
 fighter_component = Fighter(hp=30, defense=2, power=5, death_function=player_death)
-player = GameObject(0, 0, 2, 'player', colours.black, blocks=True, fighter=fighter_component)
+player = GameObject(0, 0, 1, 'player', colours.black, blocks=True, fighter=fighter_component)
 
 objects = [player]
 
@@ -958,12 +776,6 @@ inventory = []
 game_msgs = []
 visible_tiles = []
 my_map = []
-item_component = Item(use_function=cast_fireball)
-item = GameObject(-1, -1, '#', 'Fireball Scroll', colours.dark_blue, item=item_component)
-objects.append(item)
-item.item.pick_up()
-
-
 message('Welcome stranger! Prepare to perish in the Tombs of the Ancient Kings.', colours.red)
 
 make_map()
@@ -978,13 +790,15 @@ while player_action != 'exit':
 
 	render_all()
 
-	player_action = handle_keys()
+	t.refresh()
 
-	t.layer(OBJECT_LAYER)
-	t.clear_area(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
+	for obj in objects:
+		obj.clear()
+
+	player_action = handle_keys()
 	
 	if game_state == 'playing' and player_action != 'no-turn':
-		
+		t.clear()
 		for obj in objects:
 			if obj.ai:
 				obj.ai.take_turn()
