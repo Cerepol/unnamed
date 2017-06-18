@@ -365,7 +365,7 @@ def place_objects(room):
 				item = GameObject(x, y, '#', 'Bolt Scroll', colours.light_blue, item=item_component)
 
 			elif num < 55+15+15:
-				item_component = Item(use_function=cast_lightning)
+				item_component = Item(use_function=cast_confuse)
 				item = GameObject(x, y, '#', 'Confuse Scroll', colours.blue, item=item_component)
 
 			elif num <= 55+15+15+15:
