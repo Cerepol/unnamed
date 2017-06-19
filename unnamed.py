@@ -27,6 +27,7 @@ BASE_LAYER = 0
 OBJECT_LAYER = 1
 EFFECT_LAYER = 2
 UI_LAYER = 250
+OVERLAY_LAYER = 248
 CURSOR_LAYER = 249
 MENU_LAYER = 255
 
@@ -306,10 +307,13 @@ def is_visible_tile(x, y):
 		return False
 	return True
 
-def is_blocked(x, y):
+def is_blocked(x, y, tilesOnly=False):
 	"""Returns if the tile location is blocked"""
 	if my_map[x][y].blocked:
 		return True
+
+	if tilesOnly:
+		return False
 
 	for obj in objects:
 		if obj.blocks and obj.x == x and obj.y == y:
@@ -392,6 +396,25 @@ def closest_monster(max_range):
 
 	return closest_enemy
 
+def draw_max_range(max_range):
+	"""Draws a dark overlay over anything not in range"""
+	
+	t.layer(OVERLAY_LAYER)
+
+	if max_range is None:
+		t.clear_area(0, 0, MAP_WIDTH, MAP_HEIGHT)
+		return
+
+	set_colour(colours.black, 200)
+
+	for x in range(0, MAP_WIDTH):
+		for y in range(0, MAP_HEIGHT):
+			if player.distance(x, y) > max_range or is_blocked(x, y, tilesOnly=True):
+				t.put(x, y, BLOCK_CHAR)
+
+
+
+
 def draw_cursor(x, y):
 	"""Draws a cursor at the specified point"""
 
@@ -414,6 +437,7 @@ def target_tile(max_range=None):
 	my = t.state(t.TK_MOUSE_Y)
 
 	draw_cursor(x, y)
+	draw_max_range(max_range)
 
 	message("Select using the mouse or movements keys. Use M1, Enter, 5 to confirm and ESC/SPACE to cancel", colours.light_cyan)
 	render_all()
@@ -453,7 +477,7 @@ def target_tile(max_range=None):
 		#Check for Out of Bounds/Range
 		if 0 < dx and dx < MAP_WIDTH and 0 < dy and dy < MAP_HEIGHT:
 			#Check for within range
-			if player.distance(dx, dy) <= max_range:
+			if player.distance(dx, dy) <= max_range and not is_blocked(dx, dy, tilesOnly=True):
 				x = dx
 				y = dy
 
@@ -465,6 +489,7 @@ def target_tile(max_range=None):
 
 	#Check if it was a mouse confirm or a key confirm/cancel
 	draw_cursor(None, None)
+	draw_max_range(None)
 	if key == t.TK_MOUSE_LEFT:
 		x = t.state(t.TK_MOUSE_X)
 		y = t.state(t.TK_MOUSE_Y)
