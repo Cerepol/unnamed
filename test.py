@@ -1,6 +1,7 @@
 """test shit"""
 from bearlibterminal import terminal
- 
+import os
+
 terminal.open()
 
 name = "\u2588" * 25
@@ -37,6 +38,15 @@ for (x, y) in effected_points:
 
 terminal.refresh()
 
+items = os.listdir("./saves/")
+
+print(items)
+items = [i.split(sep=".")[0] for i in items]
+
+print(items)
+
+myset = set(items)
+print(myset)
 while terminal.read() != terminal.TK_ESCAPE:
 	pass
  
